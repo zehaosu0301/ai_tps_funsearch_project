@@ -17,52 +17,59 @@
 from collections.abc import Sequence
 from typing import Any
 
-from funsearch.implementation import code_manipulation
-from funsearch.implementation import config as config_lib
-from funsearch.implementation import evaluator
-from funsearch.implementation import programs_database
-from funsearch.implementation import sampler
+from implementation import code_manipulation
+from implementation import config as config_lib
+from implementation import evaluator
+from implementation import programs_database
+from implementation import sampler
 
 
 def _extract_function_names(specification: str) -> tuple[str, str]:
-  """Returns the name of the function to evolve and of the function to run."""
-  run_functions = list(
-      code_manipulation.yield_decorated(specification, 'funsearch', 'run'))
-  if len(run_functions) != 1:
-    raise ValueError('Expected 1 function decorated with `@funsearch.run`.')
-  evolve_functions = list(
-      code_manipulation.yield_decorated(specification, 'funsearch', 'evolve'))
-  if len(evolve_functions) != 1:
-    raise ValueError('Expected 1 function decorated with `@funsearch.evolve`.')
-  return evolve_functions[0], run_functions[0]
+    """Returns the name of the function to evolve and of the function to run."""
+    run_functions = list(
+        code_manipulation.yield_decorated(specification, "funsearch", "run")
+    )
+    if len(run_functions) != 1:
+        raise ValueError("Expected 1 function decorated with `@funsearch.run`.")
+    evolve_functions = list(
+        code_manipulation.yield_decorated(specification, "funsearch", "evolve")
+    )
+    if len(evolve_functions) != 1:
+        raise ValueError("Expected 1 function decorated with `@funsearch.evolve`.")
+    return evolve_functions[0], run_functions[0]
 
 
 def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
-  """Launches a FunSearch experiment."""
-  function_to_evolve, function_to_run = _extract_function_names(specification)
+    """Launches a FunSearch experiment."""
+    function_to_evolve, function_to_run = _extract_function_names(specification)
 
-  template = code_manipulation.text_to_program(specification)
-  database = programs_database.ProgramsDatabase(
-      config.programs_database, template, function_to_evolve)
+    template = code_manipulation.text_to_program(specification)
+    database = programs_database.ProgramsDatabase(
+        config.programs_database, template, function_to_evolve
+    )
 
-  evaluators = []
-  for _ in range(config.num_evaluators):
-    evaluators.append(evaluator.Evaluator(
-        database,
-        template,
-        function_to_evolve,
-        function_to_run,
-        inputs,
-    ))
-  # We send the initial implementation to be analysed by one of the evaluators.
-  initial = template.get_function(function_to_evolve).body
-  evaluators[0].analyse(initial, island_id=None, version_generated=None)
+    evaluators = []
+    for _ in range(config.num_evaluators):
+        evaluators.append(
+            evaluator.Evaluator(
+                database,
+                template,
+                function_to_evolve,
+                function_to_run,
+                inputs,
+            )
+        )
+    # We send the initial implementation to be analysed by one of the evaluators.
+    initial = template.get_function(function_to_evolve).body
+    evaluators[0].analyse(initial, island_id=None, version_generated=None)
 
-  samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt)
-              for _ in range(config.num_samplers)]
+    samplers = [
+        sampler.Sampler(database, evaluators, config.samples_per_prompt)
+        for _ in range(config.num_samplers)
+    ]
 
-  # This loop can be executed in parallel on remote sampler machines. As each
-  # sampler enters an infinite loop, without parallelization only the first
-  # sampler will do any work.
-  for s in samplers:
-    s.sample()
+    # This loop can be executed in parallel on remote sampler machines. As each
+    # sampler enters an infinite loop, without parallelization only the first
+    # sampler will do any work.
+    for s in samplers:
+        s.sample()
