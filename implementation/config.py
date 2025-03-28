@@ -64,10 +64,3 @@ class Config:
     num_evaluators: int = 140
     samples_per_prompt: int = 4
 
-
-@dataclasses.dataclass()
-class ClassConfig:
-    """Implemented by RZ. Configuration of 'class LLM' and 'class SandBox' used in this implementation."""
-
-    llm_class: Type[sampler.LLM]
-    sandbox_class: Type[evaluator.Sandbox]
