@@ -21,14 +21,14 @@ It implements 2 classes representing unities of code:
 - Program, which contains a code preface (which could be imports, global
   variables and classes, ...) and a list of Functions.
 """
+from __future__ import annotations
+
+
 import ast
 from collections.abc import Iterator, MutableSet, Sequence
 import dataclasses
 import io
 import tokenize
-from __future__ import annotations
-
-
 
 from absl import logging
 

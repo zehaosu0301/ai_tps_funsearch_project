@@ -14,9 +14,11 @@
 # ==============================================================================
 
 """A single-threaded implementation of the FunSearch pipeline."""
+from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import Any, Tuple, Sequence
-from __future__ import annotations
+
 
 
 from implementation import code_manipulation

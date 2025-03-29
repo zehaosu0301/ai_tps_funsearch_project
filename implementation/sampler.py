@@ -14,12 +14,13 @@
 # ==============================================================================
 
 """Class for sampling new programs."""
+from __future__ import annotations
+
 from collections.abc import Collection, Sequence
 import time
 from typing import Collection, Sequence, Type
 import numpy as np
 import os
-from __future__ import annotations
 import openai
 from abc import ABC, abstractmethod
 
@@ -27,54 +28,25 @@ from implementation import evaluator
 from implementation import programs_database
 
 
-class LLM:
+class LLM(ABC):
     """Language model that predicts continuation of provided source code."""
 
-    def __init__(
-        self, 
-        samples_per_prompt: int, 
-        api_key: str = None, 
-        model: str = "gpt-4",
-        max_tokens: int = 1500,
-        temperature: float = 0.7
-    ) -> None:
+    def __init__(self, samples_per_prompt: int) -> None:
         self._samples_per_prompt = samples_per_prompt
-        self._model = model
-        self._max_tokens = max_tokens
-        self._temperature = temperature
-        
-        # Set the API key if provided, otherwise use environment variable
-        if api_key:
-            openai.api_key = api_key
-        elif not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("OpenAI API key must be provided or set as OPENAI_API_KEY environment variable")
 
     def _draw_sample(self, prompt: str) -> str:
-        """Returns a predicted continuation of `prompt` using OpenAI API."""
-        try:
-            # Using the newer OpenAI client format
-            response = openai.chat.completions.create(
-                model=self._model,
-                messages=[
-                    {"role": "system", "content": "You are a Python expert. Continue the provided Python function implementation to solve the specified problem."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=self._max_tokens,
-                temperature=self._temperature,
-                stop=["def ", "\n\n\n"]  # Stop at next function def or triple newline
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Error when calling OpenAI API: {e}")
-            return ""  # Return empty string on error
+        """Returns a predicted continuation of `prompt`."""
+        raise NotImplementedError('Must provide a language model.')
 
+    @abstractmethod
     def draw_samples(self, prompt: str) -> Collection[str]:
         """Returns multiple predicted continuations of `prompt`."""
         return [self._draw_sample(prompt) for _ in range(self._samples_per_prompt)]
+    
 
 class Sampler:
     """Node that samples program continuations and sends them for analysis."""
-
+    _global_samples_nums: int = 1 
     def __init__(
         self,
         database: programs_database.ProgramsDatabase,

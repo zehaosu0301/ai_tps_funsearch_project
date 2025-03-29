@@ -14,13 +14,15 @@
 # ==============================================================================
 
 """Class for evaluating programs proposed by the Sampler."""
+from __future__ import annotations
+
 from abc import abstractmethod, ABC
 import ast
 from collections.abc import Sequence
 import copy
 import time
 from typing import Any, Type
-from __future__ import annotations
+
 
 from implementation import code_manipulation, profile
 from implementation import programs_database

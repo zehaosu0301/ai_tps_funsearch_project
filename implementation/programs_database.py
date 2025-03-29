@@ -14,12 +14,14 @@
 # ==============================================================================
 
 """A programs database that implements the evolutionary algorithm."""
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 import copy
 import dataclasses
 import time
 from typing import Any, Tuple, Mapping
-from __future__ import annotations
+
 
 from absl import logging
 import numpy as np
