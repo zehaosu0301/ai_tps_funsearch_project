@@ -15,8 +15,13 @@
 
 """Class for sampling new programs."""
 from collections.abc import Collection, Sequence
-
+import time
+from typing import Collection, Sequence, Type
 import numpy as np
+import os
+from __future__ import annotations
+import openai
+from abc import ABC, abstractmethod
 
 from implementation import evaluator
 from implementation import programs_database
@@ -25,17 +30,47 @@ from implementation import programs_database
 class LLM:
     """Language model that predicts continuation of provided source code."""
 
-    def __init__(self, samples_per_prompt: int) -> None:
+    def __init__(
+        self, 
+        samples_per_prompt: int, 
+        api_key: str = None, 
+        model: str = "gpt-4",
+        max_tokens: int = 1500,
+        temperature: float = 0.7
+    ) -> None:
         self._samples_per_prompt = samples_per_prompt
+        self._model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+        
+        # Set the API key if provided, otherwise use environment variable
+        if api_key:
+            openai.api_key = api_key
+        elif not os.environ.get("OPENAI_API_KEY"):
+            raise ValueError("OpenAI API key must be provided or set as OPENAI_API_KEY environment variable")
 
     def _draw_sample(self, prompt: str) -> str:
-        """Returns a predicted continuation of `prompt`."""
-        raise NotImplementedError("Must provide a language model.")
+        """Returns a predicted continuation of `prompt` using OpenAI API."""
+        try:
+            # Using the newer OpenAI client format
+            response = openai.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": "You are a Python expert. Continue the provided Python function implementation to solve the specified problem."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=self._max_tokens,
+                temperature=self._temperature,
+                stop=["def ", "\n\n\n"]  # Stop at next function def or triple newline
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error when calling OpenAI API: {e}")
+            return ""  # Return empty string on error
 
     def draw_samples(self, prompt: str) -> Collection[str]:
         """Returns multiple predicted continuations of `prompt`."""
         return [self._draw_sample(prompt) for _ in range(self._samples_per_prompt)]
-
 
 class Sampler:
     """Node that samples program continuations and sends them for analysis."""
@@ -45,19 +80,48 @@ class Sampler:
         database: programs_database.ProgramsDatabase,
         evaluators: Sequence[evaluator.Evaluator],
         samples_per_prompt: int,
-    ) -> None:
+        llm_class: Type[LLM] = LLM,
+        max_sample_nums: int | None = None,
+    ):
         self._database = database
         self._evaluators = evaluators
-        self._llm = LLM(samples_per_prompt)
+        self._llm = llm_class(samples_per_prompt)
+        self._max_sample_nums = max_sample_nums
+        self._samples_per_prompt = samples_per_prompt
 
-    def sample(self):
-        """Continuously gets prompts, samples programs, sends them for analysis."""
+    def sample(self, **kwargs):
+        """Continuously gets prompts, samples programs, sends them for analysis.
+        """
         while True:
-            prompt = self._database.get_prompt()
-            samples = self._llm.draw_samples(prompt.code)
-            # This loop can be executed in parallel on remote evaluator machines.
-            for sample in samples:
-                chosen_evaluator = np.random.choice(self._evaluators)
-                chosen_evaluator.analyse(
-                    sample, prompt.island_id, prompt.version_generated
-                )
+            # stop the search process if hit global max sample nums
+            if self._max_sample_nums and self.__class__._global_samples_nums >= self._max_sample_nums:
+                break
+            try:
+                prompt = self._database.get_prompt()
+                reset_time = time.time()
+                samples = self._llm.draw_samples(prompt.code)
+                sample_time = (time.time() - reset_time) / self._samples_per_prompt
+                # This loop can be executed in parallel on remote evaluator machines.
+                for sample in samples:
+                    self._global_sample_nums_plus_one()  # RZ: add _global_sample_nums
+                    cur_global_sample_nums = self._get_global_sample_nums()
+                    chosen_evaluator: evaluator.Evaluator = np.random.choice(self._evaluators)
+                    chosen_evaluator.analyse(
+                        sample,
+                        prompt.island_id,
+                        prompt.version_generated,
+                        **kwargs,
+                        global_sample_nums=cur_global_sample_nums,
+                        sample_time=sample_time
+                    )
+            except:
+                continue
+
+    def _get_global_sample_nums(self) -> int:
+        return self.__class__._global_samples_nums
+
+    def set_global_sample_nums(self, num):
+        self.__class__._global_samples_nums = num
+
+    def _global_sample_nums_plus_one(self):
+        self.__class__._global_samples_nums += 1

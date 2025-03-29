@@ -14,12 +14,15 @@
 # ==============================================================================
 
 """Class for evaluating programs proposed by the Sampler."""
+from abc import abstractmethod, ABC
 import ast
 from collections.abc import Sequence
 import copy
-from typing import Any
+import time
+from typing import Any, Type
+from __future__ import annotations
 
-from implementation import code_manipulation
+from implementation import code_manipulation, profile
 from implementation import programs_database
 
 
@@ -75,7 +78,9 @@ def _sample_to_program(
     body = _trim_function_body(generated_code)
     if version_generated is not None:
         body = code_manipulation.rename_function_calls(
-            body, f"{function_to_evolve}_v{version_generated}", function_to_evolve
+            body, 
+            f"{function_to_evolve}_v{version_generated}",
+            function_to_evolve
         )
 
     program = copy.deepcopy(template)
@@ -84,20 +89,23 @@ def _sample_to_program(
     return evolved_function, str(program)
 
 
-class Sandbox:
-    """Sandbox for executing generated code."""
-
+class Sandbox(ABC):
+    """Sandbox for executing generated code with timeout-based safety."""
+    @abstractmethod
     def run(
-        self,
-        program: str,
-        function_to_run: str,
-        test_input: str,
-        timeout_seconds: int,
-    ) -> tuple[Any, bool]:
+      self,
+      program: str,
+      function_to_run: str,
+      function_to_evolve: str,
+      inputs: Any, 
+      test_input: str,
+      timeout_seconds: int,
+      **kwargs,
+  ) -> tuple[Any, bool]:
         """Returns `function_to_run(test_input)` and whether execution succeeded."""
         raise NotImplementedError(
-            "Must provide a sandbox for executing untrusted code."
-        )
+            'Must provide a sandbox for executing untrusted code.')
+    
 
 
 def _calls_ancestor(program: str, function_to_evolve: str) -> bool:
@@ -123,6 +131,7 @@ class Evaluator:
         function_to_run: str,
         inputs: Sequence[Any],
         timeout_seconds: int = 30,
+        sandbox_class: Type[Sandbox] = Sandbox
     ):
         self._database = database
         self._template = template
@@ -130,31 +139,49 @@ class Evaluator:
         self._function_to_run = function_to_run
         self._inputs = inputs
         self._timeout_seconds = timeout_seconds
-        self._sandbox = Sandbox()
+        self._sandbox = sandbox_class()
 
     def analyse(
         self,
         sample: str,
         island_id: int | None,
         version_generated: int | None,
+        **kwargs 
+        
     ) -> None:
         """Compiles the sample into a program and executes it on test inputs."""
         new_function, program = _sample_to_program(
             sample, version_generated, self._template, self._function_to_evolve
-        )
+    )
 
         scores_per_test = {}
         for current_input in self._inputs:
             test_output, runs_ok = self._sandbox.run(
-                program, self._function_to_run, current_input, self._timeout_seconds
-            )
-            if (
-                runs_ok
-                and not _calls_ancestor(program, self._function_to_evolve)
-                and test_output is not None
-            ):
+                program,
+                self._function_to_run,
+                self._function_to_evolve,
+                self._inputs,
+                current_input,
+                self._timeout_seconds
+        )
+            if runs_ok and not _calls_ancestor(program, self._function_to_evolve) and test_output is not None:
                 if not isinstance(test_output, (int, float)):
-                    raise ValueError("@function.run did not return an int/float score.")
+                    print(f'Error: test_output is {test_output}')
+                    raise ValueError('@function.run did not return an int/float score.')
                 scores_per_test[current_input] = test_output
         if scores_per_test:
-            self._database.register_program(new_function, island_id, scores_per_test)
+            self._database.register_program(
+                new_function,
+                island_id,
+                scores_per_test,
+                **kwargs
+            )
+        else:
+            profiler: profile.Profiler = kwargs.get('profiler', None)
+            if profiler:
+                global_sample_nums = kwargs.get('global_sample_nums', None)
+                sample_time = kwargs.get('sample_time', None)
+                new_function.global_sample_nums = global_sample_nums
+                new_function.score = None
+                new_function.sample_time = sample_time
+                profiler.register_function(new_function)

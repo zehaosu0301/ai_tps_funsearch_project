@@ -15,14 +15,16 @@
 
 """A single-threaded implementation of the FunSearch pipeline."""
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Tuple, Sequence
+from __future__ import annotations
+
 
 from implementation import code_manipulation
 from implementation import config as config_lib
 from implementation import evaluator
 from implementation import programs_database
 from implementation import sampler
-
+from implementation import profile
 
 def _extract_function_names(specification: str) -> tuple[str, str]:
     """Returns the name of the function to evolve and of the function to run."""
@@ -39,7 +41,13 @@ def _extract_function_names(specification: str) -> tuple[str, str]:
     return evolve_functions[0], run_functions[0]
 
 
-def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
+def main(specification: str, 
+         inputs: Sequence[Any], 
+         config: config_lib.Config, 
+         max_sample_nums: int | None,  
+         class_config: config_lib.ClassConfig,
+         **kwargs
+         ):
     """Launches a FunSearch experiment."""
     function_to_evolve, function_to_run = _extract_function_names(specification)
 
@@ -48,28 +56,41 @@ def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
         config.programs_database, template, function_to_evolve
     )
 
+    # get log_dir and create profiler
+    log_dir = kwargs.get('log_dir', None)
+    if log_dir is None:
+        profiler = None
+    else:
+        profiler = profile.Profiler(log_dir)
+
     evaluators = []
     for _ in range(config.num_evaluators):
-        evaluators.append(
-            evaluator.Evaluator(
-                database,
-                template,
-                function_to_evolve,
-                function_to_run,
-                inputs,
-            )
-        )
+        evaluators.append(evaluator.Evaluator(
+            database,
+            template,
+            function_to_evolve,
+            function_to_run,
+            inputs,
+            timeout_seconds=config.evaluate_timeout_seconds,
+            sandbox_class=class_config.sandbox_class
+        ))
+
     # We send the initial implementation to be analysed by one of the evaluators.
     initial = template.get_function(function_to_evolve).body
-    evaluators[0].analyse(initial, island_id=None, version_generated=None)
+    evaluators[0].analyse(initial, 
+                          island_id=None, 
+                          version_generated=None, 
+                          profiler=profiler)
 
-    samplers = [
-        sampler.Sampler(database, evaluators, config.samples_per_prompt)
-        for _ in range(config.num_samplers)
-    ]
+    samplers = [sampler.Sampler(database, evaluators, 
+                                config.samples_per_prompt, 
+                                max_sample_nums=max_sample_nums, 
+                                llm_class=class_config.llm_class)
+                for _ in range(config.num_samplers)]
+
 
     # This loop can be executed in parallel on remote sampler machines. As each
     # sampler enters an infinite loop, without parallelization only the first
     # sampler will do any work.
     for s in samplers:
-        s.sample()
+        s.sample(profiler=profiler)

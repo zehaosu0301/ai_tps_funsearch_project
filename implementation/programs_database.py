@@ -18,13 +18,14 @@ from collections.abc import Mapping, Sequence
 import copy
 import dataclasses
 import time
-from typing import Any
+from typing import Any, Tuple, Mapping
+from __future__ import annotations
 
 from absl import logging
 import numpy as np
 import scipy
 
-from implementation import code_manipulation
+from implementation import code_manipulation, profile
 from implementation import config as config_lib
 
 Signature = tuple[float, ...]
@@ -48,7 +49,9 @@ def _softmax(logits: np.ndarray, temperature: float) -> np.ndarray:
 
 def _reduce_score(scores_per_test: ScoresPerTest) -> float:
     """Reduces per-test scores into a single score."""
-    return scores_per_test[list(scores_per_test.keys())[-1]]
+    if not scores_per_test:
+        return float('-inf')
+    return sum(scores_per_test.values()) / len(scores_per_test)
 
 
 def _get_signature(scores_per_test: ScoresPerTest) -> Signature:
@@ -119,6 +122,7 @@ class ProgramsDatabase:
         program: code_manipulation.Function,
         island_id: int,
         scores_per_test: ScoresPerTest,
+        **kwargs
     ) -> None:
         """Registers `program` in the specified island."""
         self._islands[island_id].register_program(program, scores_per_test)
@@ -129,11 +133,21 @@ class ProgramsDatabase:
             self._best_score_per_island[island_id] = score
             logging.info("Best score of island %d increased to %s", island_id, score)
 
+        profiler: profile.Profiler = kwargs.get('profiler', None)
+        if profiler:
+            global_sample_nums = kwargs.get('global_sample_nums', None)
+            sample_time = kwargs.get('sample_time', None)
+            program.score = score
+            program.global_sample_nums = global_sample_nums
+            program.sample_time = sample_time
+            profiler.register_function(program)
+            
     def register_program(
         self,
         program: code_manipulation.Function,
         island_id: int | None,
         scores_per_test: ScoresPerTest,
+        **kwargs
     ) -> None:
         """Registers `program` in the database."""
         # In an asynchronous implementation we should consider the possibility of
@@ -142,9 +156,9 @@ class ProgramsDatabase:
         if island_id is None:
             # This is a program added at the beginning, so adding it to all islands.
             for island_id in range(len(self._islands)):
-                self._register_program_in_island(program, island_id, scores_per_test)
+                self._register_program_in_island(program, island_id, scores_per_test,**kwargs)
         else:
-            self._register_program_in_island(program, island_id, scores_per_test)
+            self._register_program_in_island(program, island_id, scores_per_test,**kwargs)
 
         # Check whether it is time to reset an island.
         if time.time() - self._last_reset_time > self._config.reset_period:

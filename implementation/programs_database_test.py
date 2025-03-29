@@ -22,7 +22,7 @@ import numpy as np
 from implementation import code_manipulation
 from implementation import config
 from implementation import programs_database
-
+from implementation import sampler
 _SKELETON = '''
 """Finds large cap sets."""
 import numpy as np

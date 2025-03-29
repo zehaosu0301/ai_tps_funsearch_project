@@ -26,6 +26,9 @@ from collections.abc import Iterator, MutableSet, Sequence
 import dataclasses
 import io
 import tokenize
+from __future__ import annotations
+
+
 
 from absl import logging
 
@@ -33,12 +36,14 @@ from absl import logging
 @dataclasses.dataclass
 class Function:
   """A parsed Python function."""
-
   name: str
   args: str
   body: str
   return_type: str | None = None
   docstring: str | None = None
+  global_sample_nums: int | None = (None)
+  score: int | None = None
+  sample_time: float | None = None
 
   def __str__(self) -> str:
     return_type = f' -> {self.return_type}' if self.return_type else ''

@@ -18,6 +18,7 @@ import dataclasses
 from typing import Type
 from implementation import sampler
 from implementation import evaluator
+from __future__ import annotations
 
 
 @dataclasses.dataclass(frozen=True)
@@ -60,7 +61,12 @@ class Config:
     programs_database: ProgramsDatabaseConfig = dataclasses.field(
         default_factory=ProgramsDatabaseConfig
     )
-    num_samplers: int = 15
-    num_evaluators: int = 140
+    num_samplers: int = 1
+    num_evaluators: int = 1
     samples_per_prompt: int = 4
+    evaluate_timeout_seconds: int = 30  
 
+@dataclasses.dataclass()
+class ClassConfig:
+    llm_class: Type[sampler.LLM]
+    sandbox_class: Type[evaluator.Sandbox]
