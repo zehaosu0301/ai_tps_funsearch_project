@@ -47,6 +47,44 @@ class Profiler:
         self._each_sample_evaluate_failed_program_num = []
         self._each_sample_tot_sample_time = []
     
+    def register_dataset_performance(self, dataset_name, score, time_taken):
+        """Record the performance of each dataset"""
+        if not hasattr(self, '_dataset_performance'):
+            self._dataset_performance = {}
+        
+        if dataset_name not in self._dataset_performance:
+            self._dataset_performance[dataset_name] = []
+        
+        self._dataset_performance[dataset_name].append({
+            'score': score,
+            'time': time_taken,
+            'sample': self._num_samples
+        })
+        
+        # record to TensorBoard
+        if self._log_dir:
+            self._writer.add_scalar(
+                f'Dataset/{dataset_name}',
+                score,
+                global_step=self._num_samples
+            )
+
+    def get_best_function_by_dataset(self):
+        """Returns the best performing function on each dataset"""
+        if not hasattr(self, '_dataset_performance'):
+            return {}
+        
+        best_functions = {}
+        for dataset, performances in self._dataset_performance.items():
+            best_perf = max(performances, key=lambda x: x['score'])
+            best_sample = best_perf['sample']
+            
+            for sample_id, function in self._all_sampled_functions.items():
+                if function.global_sample_nums == best_sample:
+                    best_functions[dataset] = function
+                    break
+        
+        return best_functions
 
     def _write_tensorboard(self):
         if not self._log_dir:
