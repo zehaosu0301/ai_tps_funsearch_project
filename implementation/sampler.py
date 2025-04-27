@@ -71,23 +71,49 @@ class Sampler:
             try:
                 prompt = self._database.get_prompt()
                 reset_time = time.time()
-                samples = self._llm.draw_samples(prompt.code)
+                
+                # Add timeout handling and better error handling for sample generation
+                try:
+                    samples = self._llm.draw_samples(prompt.code)
+                except Exception as e:
+                    print(f"Error during sample generation: {type(e).__name__}: {str(e)}")
+                    # Add a delay to prevent tight loop in case of persistent errors
+                    time.sleep(1)
+                    continue
+                    
                 sample_time = (time.time() - reset_time) / self._samples_per_prompt
+                print(f"Generated {len(samples)} samples in {sample_time:.2f}s per sample")
+                
                 # This loop can be executed in parallel on remote evaluator machines.
-                for sample in samples:
-                    self._global_sample_nums_plus_one()  # RZ: add _global_sample_nums
-                    cur_global_sample_nums = self._get_global_sample_nums()
-                    chosen_evaluator: evaluator.Evaluator = np.random.choice(self._evaluators)
-                    chosen_evaluator.analyse(
-                        sample,
-                        prompt.island_id,
-                        prompt.version_generated,
-                        **kwargs,
-                        global_sample_nums=cur_global_sample_nums,
-                        sample_time=sample_time
-                    )
-            except:
-                continue
+                for i, sample in enumerate(samples):
+                    try:
+                        self._global_sample_nums_plus_one()
+                        cur_global_sample_nums = self._get_global_sample_nums()
+                        chosen_evaluator = np.random.choice(self._evaluators)
+                        
+                        print(f"Processing sample #{cur_global_sample_nums} (sample {i+1}/{len(samples)})")
+                        
+                        # Add timeout handling for evaluation
+                        analyse_result = chosen_evaluator.analyse(
+                            sample,
+                            prompt.island_id,
+                            prompt.version_generated,
+                            **kwargs,
+                            global_sample_nums=cur_global_sample_nums,
+                            sample_time=sample_time
+                        )
+                        
+                        print(f"Completed analysis of sample #{cur_global_sample_nums}")
+                        
+                    except Exception as e:
+                        print(f"Error during sample analysis: {type(e).__name__}: {str(e)}")
+                        # Continue to next sample instead of restarting the whole loop
+                        continue
+                        
+            except Exception as e:
+                print(f"Error in sampling main loop: {type(e).__name__}: {str(e)}")
+                # Add a delay to prevent tight loop in case of persistent errors
+                time.sleep(2)
 
     def _get_global_sample_nums(self) -> int:
         return self.__class__._global_samples_nums
